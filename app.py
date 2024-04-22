@@ -1,44 +1,35 @@
 import streamlit as st
-from dotenv import load_dotenv
-import os
-
 import pandas as pd
-
 from db import Database
+import os
+from dotenv import load_dotenv
 
 load_dotenv()
 
-# reference: https://medium.com/streamlit/paginating-dataframes-with-streamlit-2da29b080920
-# Basically, we are splitting the dataframe into smaller dataframes based on the number of rows
-def split_frame(input_df, rows):
-    df = [input_df.loc[i : i + rows - 1, :] for i in range(0, len(input_df), rows)]
-    return df
+st.title('Books Catalog')
 
-# Use context manager to manage the database connection
-# Learn more about context managers: https://realpython.com/python-with-statement/
-with Database(os.getenv('DATABASE_URL')) as pg:
-    pg.create_table()
-    df = pd.read_sql('SELECT * FROM quotes', pg.con)
+# Database query functionality
+@st.cache
+def get_books():
+    with Database(os.getenv('DATABASE_URL')) as db:
+        return pd.read_sql('SELECT * FROM books', db.con)
 
-    st.title('Quote Generator')
+df_books = get_books()
+name = st.text_input('Search by book name')
+if name:
+    df_books = df_books[df_books['title'].str.contains(name, case=False, na=False)]
 
-    # Create a placeholder
-    container = st.container()
+st.dataframe(df_books)
 
-    bottom_menu = st.columns((4, 2, 1))
-    with bottom_menu[2]:
-        batch_size = st.selectbox("Page Size", options=[25, 50, 100])
-    with bottom_menu[1]:
-        total_pages = (
-            int(len(df) / batch_size) if int(len(df) / batch_size) > 0 else 1
-        )
-        current_page = st.number_input(
-            "Page", min_value=1, max_value=total_pages, step=1
-        )
-    with bottom_menu[0]:
-        st.markdown(f"Page **{current_page}** of **{total_pages}** ")
+# For filtering and ordering
+rating = st.selectbox('Filter by rating', ['All'] + sorted(df_books['rating'].unique()))
+if rating != 'All':
+    df_books = df_books[df_books['rating'] == rating]
 
-    pages = split_frame(df, batch_size)
+price_order = st.selectbox('Order by price', ['Ascending', 'Descending'])
+if price_order == 'Ascending':
+    df_books = df_books.sort_values(by='price', ascending=True)
+elif price_order == 'Descending':
+    df_books = df_books.sort_values(by='price', ascending=False)
 
-    # Write the dataframe component to the previously created container
-    container.dataframe(data=pages[current_page - 1], use_container_width=True)
+st.dataframe(df_books)
